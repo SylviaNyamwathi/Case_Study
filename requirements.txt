@@ -1,0 +1,6 @@
+# Pinned to what the pipeline was actually built and tested against.
+pyspark==3.5.3          # Bronze + Silver. Needs Java 17 or 21 on PATH.
+dbt-core>=1.8,<2.0      # modelling layer
+dbt-duckdb>=1.8,<2.0    # local warehouse standing in for Redshift
+duckdb>=1.0             # also used for ad-hoc profiling of the Parquet lake
+pytest>=8.0             # unit tests for the Silver rules and schema contract

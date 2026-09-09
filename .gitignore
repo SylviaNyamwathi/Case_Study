@@ -1,0 +1,26 @@
+# Generated lake and warehouse - rebuilt by `make all`, never committed.
+data/lake/
+data/warehouse/
+data/raw/samples/
+
+# dbt
+dbt/kenya_airways/target/
+dbt/kenya_airways/dbt_packages/
+dbt/kenya_airways/logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
