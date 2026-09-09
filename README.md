@@ -23,6 +23,11 @@ Everything in this repository has been executed, not just written:
 
 ## 1. Architecture
 
+![Pipeline architecture](architecture/pipeline_diagram.png)
+
+*Full-resolution: [`architecture/pipeline_diagram.svg`](architecture/pipeline_diagram.svg) ·
+source-of-truth Mermaid: [`architecture/pipeline_diagram.md`](architecture/pipeline_diagram.md)*
+
 ```
 airlines_flights_data.csv
         │

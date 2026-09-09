@@ -1,7 +1,12 @@
 # Pipeline Architecture
 
 Mermaid renders natively on GitHub and diffs as text, so the diagram reviews
-like code instead of like a binary attachment.
+like code instead of like a binary attachment. `pipeline_diagram.svg` and
+`pipeline_diagram.png` are exported views of the same design, committed so the
+diagram is readable without a Mermaid renderer (in a plain editor, a Word
+document, or a printout).
+
+![Pipeline architecture](pipeline_diagram.png)
 
 ## End-to-end flow
 
