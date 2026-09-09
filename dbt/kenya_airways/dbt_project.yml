@@ -1,0 +1,41 @@
+name: 'kenya_airways'
+version: '1.0.0'
+config-version: 2
+
+profile: 'kenya_airways'
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+analysis-paths: ["analyses"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# Materialization strategy, by layer:
+#   staging      -> view      : thin renames/casts, no storage cost, always fresh
+#   intermediate -> ephemeral : inlined CTEs, nothing persisted that no one queries
+#   marts        -> table     : read many times by BI, worth materializing
+#                               (fct_flight_price_quote is incremental - it grows
+#                                one as_of_date partition per day)
+models:
+  kenya_airways:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: ephemeral
+    marts:
+      +materialized: table
+      +schema: marts
+
+vars:
+  # Lead-time buckets used by int_flight_pricing_enriched and the marts.
+  # Declared here so the boundaries are one decision, not three copies.
+  lead_time_buckets:
+    last_minute: 3      # 0-3  days
+    short: 7            # 4-7  days
+    medium: 15          # 8-15 days
+    long: 30            # 16-30 days
+                        # 31+  days -> 'advance'

@@ -1,0 +1,27 @@
+# Local development profile.
+#
+# DuckDB is used as a stand-in for Redshift so the models can actually be built
+# and tested without a cluster: it reads the Silver Parquet files directly and
+# speaks close-enough ANSI SQL. The `redshift` target below is the real shape of
+# the production connection - swap `--target redshift` once credentials exist.
+kenya_airways:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../../data/warehouse/kenya_airways.duckdb
+      threads: 4
+      # parquet is statically linked into modern DuckDB builds - no extension
+      # download needed, so the project builds on an air-gapped machine.
+
+    redshift:
+      type: redshift
+      host: "{{ env_var('REDSHIFT_HOST', 'localhost') }}"
+      user: "{{ env_var('REDSHIFT_USER', 'dbt') }}"
+      password: "{{ env_var('REDSHIFT_PASSWORD', '') }}"
+      port: 5439
+      dbname: "{{ env_var('REDSHIFT_DB', 'analytics') }}"
+      schema: "{{ env_var('REDSHIFT_SCHEMA', 'gold') }}"
+      threads: 4
+      sslmode: require
+      keepalives_idle: 240
