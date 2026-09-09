@@ -1,0 +1,70 @@
+version: 2
+
+models:
+  - name: stg_flights
+    description: >
+      Thin 1:1 view over silver.flights_valid - renames and casts only.
+      Grain: one flight price quote (route + cabin class + lead time + snapshot).
+    columns:
+      - name: flight_quote_sk
+        description: Surrogate key from Silver (md5 of the business key).
+        tests:
+          - not_null
+          - unique
+      - name: quote_group_sk
+        description: >
+          Groups fare variants of the same flight in the same lead-time bucket.
+          Deliberately NOT unique - 45,579 groups carry multiple fare/duration
+          variants (see documentation/silver_dq_findings.md).
+        tests: [not_null]
+      - name: as_of_date
+        description: Logical price-snapshot date, minted at ingestion.
+        tests: [not_null]
+      - name: airline_name
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['AirAsia', 'Air_India', 'GO_FIRST', 'Indigo', 'SpiceJet', 'Vistara']
+      - name: origin_city
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Bangalore', 'Chennai', 'Delhi', 'Hyderabad', 'Kolkata', 'Mumbai']
+      - name: destination_city
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Bangalore', 'Chennai', 'Delhi', 'Hyderabad', 'Kolkata', 'Mumbai']
+      - name: departure_time_bucket
+        tests:
+          - accepted_values:
+              values: ['Afternoon', 'Early_Morning', 'Evening', 'Late_Night', 'Morning', 'Night']
+      - name: arrival_time_bucket
+        tests:
+          - accepted_values:
+              values: ['Afternoon', 'Early_Morning', 'Evening', 'Late_Night', 'Morning', 'Night']
+      - name: stops_label
+        tests:
+          - accepted_values:
+              values: ['zero', 'one', 'two_or_more']
+      - name: cabin_class
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Economy', 'Business']
+      - name: price_inr
+        description: Quoted fare in INR. Always > 0 - enforced in Silver.
+        tests: [not_null]
+      - name: duration_hours
+        tests: [not_null]
+      - name: days_to_departure
+        description: Booking lead time in days at the moment of the quote.
+        tests: [not_null]
+
+  - name: stg_flights_rejected
+    description: >
+      Rows rejected by Silver validation or deduplication, with the reason.
+      Feeds mart_data_quality_summary.
+    columns:
+      - name: rejection_reason
+        tests: [not_null]

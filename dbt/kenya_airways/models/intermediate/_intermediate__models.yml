@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: int_flight_routes
+    description: >
+      Distinct directional routes with a stable md5 route_id. Ephemeral - used
+      by int_flight_pricing_enriched and dim_route, never queried directly.
+      Directional by design: Delhi->Mumbai and Mumbai->Delhi are separate
+      commercial products.
+
+  - name: int_flight_pricing_enriched
+    description: >
+      Quote-level model where every derived measure is defined exactly once:
+      route_id, lead_time_bucket, price_per_hour_inr, is_premium_cabin.
+      Ephemeral - inlined into the marts that consume it.

@@ -1,0 +1,47 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Trusted Silver layer produced by pyspark/silver/silver_transform.py.
+      Parquet on the local filesystem, partitioned by as_of_date. In production
+      this source is either an external schema over S3 (Redshift Spectrum) or a
+      Glue/Unity catalog table - only `external_location` changes, not the models.
+    meta:
+      owner: sylvia.gitau
+      layer: silver
+    tables:
+      - name: flights_valid
+        description: >
+          One row per validated, deduplicated flight price quote. Unique on
+          flight_quote_sk (md5 of the business key).
+        meta:
+          # dbt-duckdb reads the Parquet files in place - no load step, and the
+          # models are identical to what they would be over a Redshift Spectrum
+          # external schema. SILVER_PATH lets CI point at S3 instead.
+          external_location: "read_parquet('{{ env_var('SILVER_PATH', '../../data/lake/silver') }}/flights_valid/**/*.parquet', hive_partitioning = 1)"
+        loaded_at_field: _ingested_at
+        freshness:
+          warn_after: {count: 26, period: hour}
+          error_after: {count: 48, period: hour}
+        columns:
+          - name: flight_quote_sk
+            description: Surrogate key - md5 of the Silver business key.
+            tests: [not_null, unique]
+          - name: as_of_date
+            description: Logical snapshot date, minted at ingestion (see assumptions).
+            tests: [not_null]
+          - name: price_inr
+            description: Quoted fare in INR.
+            tests: [not_null]
+
+      - name: flights_rejected
+        description: >
+          Rows that failed validation or lost deduplication, each carrying
+          `rejection_reason`. Never dropped - this is what makes DQ auditable.
+        meta:
+          external_location: "read_parquet('{{ env_var('SILVER_PATH', '../../data/lake/silver') }}/flights_rejected/**/*.parquet', hive_partitioning = 1)"
+        columns:
+          - name: rejection_reason
+            description: Comma-separated list of every rule the row violated.
+            tests: [not_null]
