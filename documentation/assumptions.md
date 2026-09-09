@@ -123,7 +123,7 @@ files, set from the observed distribution plus domain sense (observed maximums:
 data, so the rules, their tests, and the documentation cannot drift apart.
 
 Because a pipeline whose reject path never fires is untested,
-`scripts/make_dq_demo_file.py` builds a small file with one row per failure mode
+`tests/make_dq_demo_file.py` builds a small file with one row per failure mode
 and the run is documented in `documentation/data_quality.md`.
 
 ---

@@ -113,7 +113,7 @@ reconciled:                    true
 
 The file is genuinely clean. That is a problem for a review: an untriggered
 reject path is an untested reject path. So
-`scripts/make_dq_demo_file.py` builds a 2,009-row file with nine deliberately
+`tests/make_dq_demo_file.py` builds a 2,009-row file with nine deliberately
 broken rows, and the documented demo run produces:
 
 ```

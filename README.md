@@ -61,7 +61,7 @@ Python 3.9+, Java 17 or 21 (PySpark needs a JVM). No cloud account, no Redshift
 cluster, no network access at build time.
 
 ```bash
-pip install -r requirements.txt
+pip install -r documentation/requirements.txt
 ```
 
 `pyspark`, `dbt-core`, `dbt-duckdb`, `pytest`. dbt runs on **DuckDB**, reading
@@ -69,22 +69,27 @@ the Silver Parquet in place — close enough to Redshift SQL that the models
 genuinely execute and the tests genuinely pass. No external dbt packages, so it
 builds offline from a clean clone.
 
-### Run everything
+### Place the dataset
+
+The supplied CSV is not committed. Put it where the pipeline expects it:
 
 ```bash
-make all          # bronze → silver → dbt build → pytest
+mkdir -p data/raw
+cp /path/to/airlines_flights_data.csv data/raw/
 ```
 
-Or step by step:
+### Run everything
 
 ```bash
 # 1. Bronze + Silver
 python pyspark/run_pipeline.py
 
 # 2. dbt: build models and run all 72 tests
+mkdir -p data/warehouse
 cd dbt/kenya_airways
 DBT_PROFILES_DIR=. dbt build
 DBT_PROFILES_DIR=. dbt docs generate
+cd ../..
 
 # 3. Unit tests
 pytest tests -v
@@ -94,7 +99,7 @@ pytest tests -v
 
 ```bash
 # build a small file with 9 deliberately broken rows
-python scripts/make_dq_demo_file.py
+python tests/make_dq_demo_file.py
 
 # load it as a second snapshot
 python pyspark/run_pipeline.py \
@@ -190,7 +195,7 @@ not rejected).
 
 The supplied file is genuinely clean — 0 nulls, 0 exact duplicates, 0 rule
 violations. A reject path that never fires is untested, so
-`scripts/make_dq_demo_file.py` injects one row per failure mode:
+`tests/make_dq_demo_file.py` injects one row per failure mode:
 
 ```
 bronze 2,009 → valid 2,000 + rejected 9 → reconciled: true
@@ -320,8 +325,6 @@ and still be wrong — a truncated file reconciles perfectly against itself.
 
 ```
 ├── README.md
-├── requirements.txt
-├── Makefile
 ├── architecture/
 │   └── pipeline_diagram.md          Mermaid: flowchart, sequence, contracts
 ├── pyspark/
@@ -340,8 +343,12 @@ and still be wrong — a truncated file reconciles perfectly against itself.
 │   ├── macros/                      lead_time_bucket, money, schema naming
 │   └── tests/                       5 singular tests + 2 generic tests
 ├── redshift/ddl/                    01_schemas → 05_external_spectrum
-├── tests/                           test_silver_rules.py, test_schema_drift.py
+├── tests/
+│   ├── test_silver_rules.py         Silver rules, keys, dedupe (Spark)
+│   ├── test_schema_drift.py         schema contract (no Spark, fast)
+│   └── make_dq_demo_file.py         builds the injected-fault demo file
 ├── documentation/
+│   ├── requirements.txt             pinned Python dependencies
 │   ├── assumptions.md
 │   ├── silver_dq_findings.md
 │   ├── data_quality.md
@@ -349,8 +356,11 @@ and still be wrong — a truncated file reconciles perfectly against itself.
 │   ├── data_model.md
 │   ├── redshift_design.md
 │   └── monitoring.md
-├── scripts/make_dq_demo_file.py
-└── data/raw/airlines_flights_data.csv
+└── documentation/  (continued above)
+
+data/ is not committed - place the supplied CSV at data/raw/ and the
+generated lake (data/lake/, data/warehouse/) is rebuilt by the run
+commands in section 2.
 ```
 
 ---

@@ -111,6 +111,9 @@ in `redshift/ddl/05_external_spectrum.sql`.
 python pyspark/run_pipeline.py
 ```
 
+(the supplied CSV must be at `data/raw/airlines_flights_data.csv` - it is not
+committed to the repository)
+
 ```
 layer:                      bronze → silver
 bronze_row_count:           300,153
@@ -125,7 +128,7 @@ reconciled:                    true
 ### Run 2: the injected-fault file (proves the reject path)
 
 ```
-python scripts/make_dq_demo_file.py
+python tests/make_dq_demo_file.py
 python pyspark/run_pipeline.py \
     --source-file data/raw/samples/flights_dq_demo.csv \
     --as-of-date 2026-09-10
