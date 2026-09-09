@@ -1,0 +1,148 @@
+version: 2
+
+models:
+  # ------------------------------------------------------------------ FACT
+  - name: fct_flight_price_quote
+    description: >
+      Central fact. GRAIN: one row = one price quote for one flight number, on
+      one directional route, in one cabin class, at one booking lead time,
+      captured in one price snapshot (as_of_date). Incremental
+      (delete+insert on flight_quote_sk) so daily files append without rebuild
+      and reruns cannot double-count.
+    columns:
+      - name: flight_quote_sk
+        description: Surrogate key - md5 of the Silver business key.
+        tests:
+          - not_null
+          - unique
+      - name: as_of_date
+        description: Price-snapshot date, minted at ingestion. Redshift SORTKEY.
+        tests: [not_null]
+      - name: route_id
+        description: FK to dim_route. Redshift DISTKEY.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_route')
+              field: route_id
+      - name: airline_id
+        description: FK to dim_airline (DISTSTYLE ALL).
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_airline')
+              field: airline_id
+      - name: cabin_class
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Economy', 'Business']
+      - name: lead_time_bucket
+        description: Macro-derived booking band; boundaries live in dbt_project vars.
+        tests: [not_null]
+      - name: price_inr
+        description: Quoted fare, INR. Positive - enforced in Silver and retested here.
+        tests: [not_null]
+      - name: price_per_hour_inr
+        description: price_inr / duration_hours. Normalises fare across trip lengths.
+      - name: days_to_departure
+        tests: [not_null]
+
+  # ------------------------------------------------------------ DIMENSIONS
+  - name: dim_airline
+    description: >
+      One row per carrier (6). Small enough for DISTSTYLE ALL in Redshift.
+      offers_business_class is derived from the data, not asserted externally.
+    columns:
+      - name: airline_id
+        tests: [not_null, unique]
+      - name: airline_name
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['AirAsia', 'Air_India', 'GO_FIRST', 'Indigo', 'SpiceJet', 'Vistara']
+
+  - name: dim_route
+    description: >
+      One row per directional route (30). Carries competition context
+      (competing_airline_count, has_nonstop_service) so route-level questions
+      can be answered without touching the fact.
+    columns:
+      - name: route_id
+        tests: [not_null, unique]
+      - name: origin_city
+        tests: [not_null]
+      - name: destination_city
+        tests: [not_null]
+      - name: competing_airline_count
+        tests:
+          - accepted_range:
+              min_value: 1
+              max_value: 6
+
+  # ----------------------------------------------------------- GOLD MARTS
+  - name: mart_route_performance
+    description: >
+      GOLD 1. Grain: route x cabin class x snapshot. Fare distribution
+      (avg/min/max/spread/stddev), competition (airline_count) and product mix
+      (nonstop_share_pct) per route. Business value: shows where a carrier holds
+      a price premium and where competition has compressed fares.
+    columns:
+      - name: route_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_route')
+              field: route_id
+      - name: cabin_class
+        tests:
+          - accepted_values:
+              values: ['Economy', 'Business']
+      - name: quote_count
+        tests: [not_null]
+      - name: avg_price_inr
+        tests: [not_null]
+    tests:
+      - unique_combination:
+          combination_of_columns: ['as_of_date', 'route_id', 'cabin_class']
+
+  - name: mart_booking_leadtime_pricing
+    description: >
+      GOLD 2. Grain: route x cabin class x lead-time bucket x snapshot.
+      Fare curve as departure approaches, indexed against the cheapest band on
+      the same route/cabin. Business value: advance-purchase fencing and
+      campaign timing.
+    columns:
+      - name: lead_time_bucket
+        tests: [not_null]
+      - name: price_index_vs_cheapest_band
+        description: 100 = cheapest band on this route/cabin; 180 = 80% dearer.
+    tests:
+      - unique_combination:
+          combination_of_columns: ['as_of_date', 'route_id', 'cabin_class', 'lead_time_bucket']
+
+  - name: mart_airline_cabin_mix
+    description: >
+      GOLD 3. Grain: airline x route x snapshot. Share of quoted flights per
+      carrier plus the Business-over-Economy premium. Business value: competitive
+      share and cabin upsell pricing. business_premium_pct is NULL where a
+      carrier sells only one cabin - deliberately not zero.
+    columns:
+      - name: airline_name
+        tests: [not_null]
+      - name: route_share_pct
+        tests: [not_null]
+    tests:
+      - unique_combination:
+          combination_of_columns: ['as_of_date', 'route_id', 'airline_name']
+
+  - name: mart_data_quality_summary
+    description: >
+      Supporting mart for observability. Grain: snapshot x rejection reason.
+      Charts rejected_pct over time; the >2% alert in
+      documentation/monitoring.md reads from here.
+    columns:
+      - name: rejection_reason
+        tests: [not_null]
+      - name: rejected_pct
+        tests: [not_null]
