@@ -18,11 +18,9 @@ re-quotes different operations:
 - Same flight, **same** snapshot date → same `flight_quote_sk` → **replaces**
   itself.
 
-No SCD machinery is needed to get price history, and no rerun can double-count.
-
 ---
 
-## Scenario 1 — New records
+## Scenario 1: New records
 
 A new file lands with a new `as_of_date`. Bronze writes one new partition;
 existing partitions are never read or rewritten. Silver processes only that
@@ -44,7 +42,7 @@ skipping its own partition.
 
 ---
 
-## Scenario 2 — Changed records
+## Scenario 2: Changed records
 
 A flight re-quoted at a different price on a later date is **not** an update —
 it is a new observation. Because `as_of_date`, `price` and `duration` are all in
@@ -63,7 +61,7 @@ date, restated price — that is the trigger to revisit, and the fact's
 
 ---
 
-## Scenario 3 — Duplicate file delivery
+## Scenario 3: Duplicate file delivery
 
 Two guards, cheapest first.
 
@@ -85,7 +83,7 @@ Demonstrated:
 
 ---
 
-## Scenario 4 — Pipeline reruns
+## Scenario 4: Pipeline reruns
 
 Idempotency is enforced at every layer, not assumed:
 
@@ -108,12 +106,12 @@ writes an empty one.
 
 ---
 
-## Scenario 5 — Late-arriving data
+## Scenario 5: Late-arriving data
 
 Two dates are needed and both are already kept, so no new mechanism is
 required:
 
-- `as_of_date` — the **logical** snapshot date the data describes.
+- `as_of_date`: the **logical** snapshot date the data describes.
 - `_ingested_at` / `_batch_id` — when we actually received and processed it.
 
 A file for the 8th arriving on the 11th is ingested with
