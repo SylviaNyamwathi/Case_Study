@@ -57,22 +57,24 @@ pip install -r documentation/requirements.txt
 dbt runs on **DuckDB** against the Silver Parquet, close enough to Redshift
 SQL that the models and tests genuinely execute, and it builds offline.
 
-```bash
+```powershell
 # 1. Place the supplied CSV (not committed)
-mkdir -p data/raw && cp /path/to/airlines_flights_data.csv data/raw/
+mkdir data\raw
+copy \path\to\airlines_flights_data.csv data\raw\
 
 # 2. Bronze + Silver
-python pyspark/run_pipeline.py
+python pyspark\run_pipeline.py
 
 # 3. dbt: build models and run all tests
-mkdir -p data/warehouse
-cd dbt/kenya_airways
-DBT_PROFILES_DIR=. dbt build
-DBT_PROFILES_DIR=. dbt docs generate
-cd ../..
+mkdir data\warehouse
+cd dbt\kenya_airways
+$env:DBT_PROFILES_DIR = "."
+dbt build
+dbt docs generate
+cd ..\..
 
 # 4. Unit tests
-pytest tests -v
+python -m pytest tests -v
 ```
 
 **Incremental + reject path demo:**
@@ -100,9 +102,9 @@ Two shape everything else:
 
 - **The business key includes `duration` and `price`.** The obvious key
   (flight + route + time buckets + class + days_left + as_of_date) collapses
-  300,153 rows to 235,761 — a silent 21.5% loss. Checking why: those 45,579
+  300,153 rows to 235,761 - a silent 21.5% loss. Checking why: those 45,579
   groups are genuine fare/schedule variants of the same flight, not
-  duplicates — zero exact duplicates exist across all 11 business attributes.
+  duplicates, zero exact duplicates exist across all 11 business attributes.
   So the key adds `duration` and `price`, deduplicating true repeat delivery
   while keeping every real fare variant. Evidence:
   [`documentation/silver_dq_findings.md`](documentation/silver_dq_findings.md).
@@ -140,7 +142,7 @@ correctly-typed rejected partition.
 
 Detail: [`documentation/incremental_strategy.md`](documentation/incremental_strategy.md).
 
-`as_of_date` partitions every layer, and it's inside the business key — so a
+`as_of_date` partitions every layer, and it's inside the business key, so a
 new date **appends** (price history), while a rerun on the same date
 **replaces itself**.
 
@@ -164,7 +166,7 @@ Detail and ER diagram: [`documentation/data_model.md`](documentation/data_model.
 
 **Grain:** one row = one price quote, for one flight number, on one
 directional route, in one cabin class, at one booking lead time, captured in
-one price snapshot (`as_of_date`). `quote_count` counts quotes, not flights —
+one price snapshot (`as_of_date`). `quote_count` counts quotes, not flights -
 one flight can have several fare variants.
 
 **Star schema:** `fct_flight_price_quote` (incremental) → `dim_route` (30,
@@ -207,7 +209,7 @@ DDL: `redshift/ddl/`. Rationale: [`documentation/redshift_design.md`](documentat
 ## 8. Monitoring
 
 Detail: [`documentation/monitoring.md`](documentation/monitoring.md). Reads
-from artefacts the pipeline already writes — no log scraping needed.
+from artefacts the pipeline already writes.
 
 - **Paging:** reconciliation failure · schema drift · no file by SLA+2h · any
   dbt test failure on the fact or a mart.
@@ -218,7 +220,7 @@ from artefacts the pipeline already writes — no log scraping needed.
   duplicate file delivered.
 
 Includes business-plausibility checks, because a run can reconcile perfectly
-and still be wrong — a truncated file reconciles against itself just fine.
+and still be wrong, a truncated file reconciles against itself just fine.
 
 ---
 
@@ -244,7 +246,7 @@ and still be wrong — a truncated file reconciles against itself just fine.
                                         monitoring, requirements.txt
 ```
 
-`data/` is not committed — place the supplied CSV at `data/raw/`; the
+`data/` is not committed - place the supplied CSV at `data/raw/`; the
 generated lake (`data/lake/`, `data/warehouse/`) is rebuilt by the commands
 in section 2.
 
@@ -252,20 +254,18 @@ in section 2.
 
 ## 10. Limitations
 
-1. **`as_of_date` is invented** — the most consequential assumption here. If
+1. **`as_of_date` is invented**: the most consequential assumption here. If
    the real ingestion date differs from the file's mtime, partition labels
    shift. `--as-of-date` exists so the value is explicit and overridable.
-2. **No departure date**, so no true time series — `days_left` gives only a
+2. **No departure date**, so no true time series - `days_left` gives only a
    relative pricing curve.
-3. **One snapshot in the supplied data** — the incremental path is proven
+3. **One snapshot in the supplied data**: the incremental path is proven
    with a synthetic second snapshot, not observed over real daily files.
-4. **DuckDB is not Redshift** — the SQL runs and passes, but `DISTKEY`/`SORTKEY`
+4. **DuckDB is not Redshift**: the SQL runs and passes, but `DISTKEY`/`SORTKEY`
    behaviour and `MERGE` performance are unverified against a real cluster.
-5. **Marts rebuild fully** — fine at this size, but should go incremental
-   before the fact passes ~10M rows.
-6. **No currency dimension** — fares are INR, unconverted.
-7. **Fare outliers are surfaced, not rejected** — the marts expose spread and
+5. **No currency dimension**: fares are INR, unconverted.
+6. **Fare outliers are surfaced, not rejected**: the marts expose spread and
    stddev so an analyst judges, rather than a filter silently deleting real
    premium fares.
-8. **No PII, so no masking layer** — would be required before Gold if
+7. **No PII, so no masking layer**: would be required before Gold if
    passenger data were ever joined in.
