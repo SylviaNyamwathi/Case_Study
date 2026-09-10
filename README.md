@@ -3,21 +3,21 @@
 **Junior Data Engineer — Take-Home Technical Assignment**
 Sylvia Gitau · 9 September 2026
 
-An end-to-end Medallion pipeline that turns the supplied airline flight pricing
-CSV into analytics-ready datasets: **PySpark** for Bronze and Silver, **dbt**
-for modelling, a **Gold** layer of three business marts, and **Amazon Redshift**
-DDL for the warehouse target.
+An end-to-end Medallion pipeline that turns the supplied airline flight
+pricing CSV into analytics-ready datasets: **PySpark** for Bronze and Silver,
+**dbt** for modelling, a **Gold** layer of business marts, and **Amazon
+Redshift** DDL for the warehouse target.
 
-Everything in this repository has been executed, not just written:
+Verified by actually running the pipeline, not just written:
 
-| | |
+| Stage | Result |
 |---|---|
-| Bronze | 300,153 rows ingested, schema-drift gate passed, reconciled |
-| Silver | 300,153 valid / 0 rejected, reconciliation `true` |
-| dbt | `dbt build` → **PASS=72, ERROR=0** (9 models, 72 tests) |
-| pytest | **32 passed** |
-| Incremental | Second snapshot loaded; day-one partition verified untouched |
-| Reject path | Proven with an injected-fault file: 9 rejects, 8 distinct reasons |
+| Bronze | 300,153 rows ingested, schema check passed, reconciled |
+| Silver | 300,153 valid / 0 rejected (source file is genuinely clean) |
+| dbt | `dbt build` → 72/72 tests pass, 0 errors |
+| pytest | 32/32 passed |
+| Incremental | Second snapshot loaded; day-one partition untouched on rerun |
+| Reject path | Proven on an injected-fault file: 9 rejects, 8 distinct reasons |
 
 ---
 
@@ -25,299 +25,202 @@ Everything in this repository has been executed, not just written:
 
 ![Pipeline architecture](architecture/pipeline_diagram.png)
 
-*Full-resolution: [`architecture/pipeline_diagram.svg`](architecture/pipeline_diagram.svg) ·
-source-of-truth Mermaid: [`architecture/pipeline_diagram.md`](architecture/pipeline_diagram.md)*
-
 ```
 airlines_flights_data.csv
         │
         ▼  PySpark — explicit schema, drift gate, file-hash manifest
-   BRONZE  data/lake/bronze/flights/as_of_date=…        raw, immutable
+   BRONZE  raw, immutable, partitioned by as_of_date
         │
         ▼  PySpark — standardize → validate → dedupe → split
-   SILVER  silver/flights_valid/     +  silver/flights_rejected/
-        │                               (with rejection_reason)
+   SILVER  flights_valid/  +  flights_rejected/ (with reason)
+        │
         ▼  dbt — staging (view) → intermediate (ephemeral) → marts
-     GOLD  fct_flight_price_quote (incremental) · dim_route · dim_airline
-           mart_route_performance
-           mart_booking_leadtime_pricing
-           mart_airline_cabin_mix
-           mart_data_quality_summary
+     GOLD  fct_flight_price_quote · dim_route · dim_airline
+           + 3 business marts + 1 data-quality mart
         │
         ▼  COPY + MERGE, or Spectrum external schema
  REDSHIFT  gold schema — DISTKEY route_id, SORTKEY as_of_date
 ```
 
-Full diagrams — end-to-end flowchart, daily-run sequence diagram, and the
-per-layer contracts table — are in
+Full flowchart, daily-run sequence diagram, and per-layer contracts:
 [`architecture/pipeline_diagram.md`](architecture/pipeline_diagram.md).
 
 ---
 
 ## 2. Setup and run
 
-### Requirements
-Python 3.9+, Java 17 or 21 (PySpark needs a JVM). No cloud account, no Redshift
-cluster, no network access at build time.
+**Requirements:** Python 3.9+, Java 17 or 21 (PySpark needs a JVM). No cloud
+account or network access needed at build time.
 
 ```bash
 pip install -r documentation/requirements.txt
 ```
 
-`pyspark`, `dbt-core`, `dbt-duckdb`, `pytest`. dbt runs on **DuckDB**, reading
-the Silver Parquet in place — close enough to Redshift SQL that the models
-genuinely execute and the tests genuinely pass. No external dbt packages, so it
-builds offline from a clean clone.
-
-### Place the dataset
-
-The supplied CSV is not committed. Put it where the pipeline expects it:
+dbt runs on **DuckDB** against the Silver Parquet — close enough to Redshift
+SQL that the models and tests genuinely execute, and it builds offline.
 
 ```bash
-mkdir -p data/raw
-cp /path/to/airlines_flights_data.csv data/raw/
-```
+# 1. Place the supplied CSV (not committed)
+mkdir -p data/raw && cp /path/to/airlines_flights_data.csv data/raw/
 
-### Run everything
-
-```bash
-# 1. Bronze + Silver
+# 2. Bronze + Silver
 python pyspark/run_pipeline.py
 
-# 2. dbt: build models and run all 72 tests
+# 3. dbt: build models and run all tests
 mkdir -p data/warehouse
 cd dbt/kenya_airways
 DBT_PROFILES_DIR=. dbt build
 DBT_PROFILES_DIR=. dbt docs generate
 cd ../..
 
-# 3. Unit tests
+# 4. Unit tests
 pytest tests -v
 ```
 
-### Demonstrate the incremental path and the reject path
-
+**Incremental + reject path demo:**
 ```bash
-# build a small file with 9 deliberately broken rows
-python tests/make_dq_demo_file.py
-
-# load it as a second snapshot
-python pyspark/run_pipeline.py \
-    --source-file data/raw/samples/flights_dq_demo.csv \
-    --as-of-date 2026-09-10
-
-# rerun day one — proves idempotency: no double count
-python pyspark/run_pipeline.py --as-of-date 2026-09-09 --force
+python tests/make_dq_demo_file.py                       # 9 broken rows, on purpose
+python pyspark/run_pipeline.py --source-file data/raw/samples/flights_dq_demo.csv --as-of-date 2026-09-10
+python pyspark/run_pipeline.py --as-of-date 2026-09-09 --force   # rerun day one — no double count
 ```
 
-### Individual layers
-
-```bash
-python pyspark/bronze/bronze_ingest.py [--as-of-date YYYY-MM-DD] [--force]
-python pyspark/silver/silver_transform.py [--as-of-date YYYY-MM-DD]
-```
-
-Outputs land in `data/lake/` (gitignored — regenerated by the commands above).
-Every run prints a DQ block with row counts per layer, `rejected_pct` and the
-`reconciled` flag.
+Outputs land in `data/lake/` (gitignored, regenerated by the commands above).
+Every run prints a DQ block with row counts and a `reconciled` flag.
 
 ---
 
 ## 3. Assumptions
 
-Full list with reasoning in
-[`documentation/assumptions.md`](documentation/assumptions.md). The two that
-shape everything else:
+Full list with reasoning: [`documentation/assumptions.md`](documentation/assumptions.md).
+Two shape everything else:
 
-### A1 — The source has no date column, so `as_of_date` is minted at ingestion
+- **`as_of_date` is minted at ingestion.** The source has 12 columns and no
+  date; `days_left` is a *relative* lead time. Every downstream need
+  (partitioning, incremental loads, dedup, reconciliation) needs a logical
+  date, so Bronze mints one from `--as-of-date` → env var → file mtime →
+  today, and treats the whole CSV as one price snapshot.
 
-The file has 12 columns and none is a date; `days_left` is a *relative* lead
-time (1–49 days). Bronze mints `as_of_date` from `--as-of-date` → `AS_OF_DATE`
-env var → file mtime → today, and the whole CSV is treated as **one price
-snapshot** on that date.
+- **The business key includes `duration` and `price`.** The obvious key
+  (flight + route + time buckets + class + days_left + as_of_date) collapses
+  300,153 rows to 235,761 — a silent 21.5% loss. Checking why: those 45,579
+  groups are genuine fare/schedule variants of the same flight, not
+  duplicates — zero exact duplicates exist across all 11 business attributes.
+  So the key adds `duration` and `price`, deduplicating true repeat delivery
+  while keeping every real fare variant. Evidence:
+  [`documentation/silver_dq_findings.md`](documentation/silver_dq_findings.md).
 
-Every requirement downstream needs a logical date: partitioning, incremental
-loads, deduplication, reconciliation, the Redshift sort key, arrival monitoring.
-Minting it once at the boundary from metadata we control is honest. Deriving a
-departure date as `as_of_date + days_left` would manufacture a fact the source
-does not contain, so `days_left` stays relative throughout.
-
-### A2 — The business key includes `duration` and `price`
-
-The intuitive key — `flight + route + time buckets + class + days_left +
-as_of_date` — collapses 300,153 rows to 235,761. Using it to deduplicate would
-**silently delete 64,392 rows (21.5%)**.
-
-I checked before trusting that number. Of the 45,579 affected groups, **zero
-contain identical rows** — every group differs in `duration` and/or `price`.
-They are genuine separate fare and schedule variants of the same flight number
-inside the same time bucket, because the source collapses exact departure times
-into six buckets and lists each fare as its own row. Across all 11 business
-attributes there are **zero exact duplicates**.
-
-So the key is:
-
-```
-flight + source_city + destination_city + departure_time + arrival_time
-       + class + days_left + duration + price + as_of_date
-```
-
-surrogated as `flight_quote_sk` (md5). It deduplicates genuinely repeated
-delivery — the real rerun risk — while preserving every real fare variant.
-`quote_group_sk` keeps the narrow grouping as an analytical dimension, and
-`multi_variant_quote_groups` (45,579) is logged per run so a change in the
-source's fare structure shows up immediately. Evidence:
-[`documentation/silver_dq_findings.md`](documentation/silver_dq_findings.md)
-Finding 1.
-
-Also: routes are **directional** (A5); prices are INR and unconverted (A4);
-rejected rows are retained, never dropped (A6); a missing or extra column fails
-the run while a reordered one does not (A9).
+Also: routes are directional; prices are INR, unconverted; rejected rows are
+retained, never dropped; a missing/extra column fails the run, a reordered
+one does not.
 
 ---
 
 ## 4. Data quality approach
 
-Detail in [`documentation/data_quality.md`](documentation/data_quality.md).
+Detail: [`documentation/data_quality.md`](documentation/data_quality.md).
 
 | Control | Mechanism | On failure |
 |---|---|---|
-| Missing / invalid values | 16 rules, declared as data in `config.RULES` | Row → `silver_rejected/` with reason; run continues |
-| Duplicates | Business-key dedupe, tiebreak latest `_ingested_at` then lowest `_source_row` | Row → rejected as `duplicate_business_key` |
-| Invalid business values | `config.ACCEPTED_VALUES`, re-asserted as dbt `accepted_values` | Rejected in Silver; dbt fails the build if one slips through |
-| Schema drift | `assert_no_schema_drift()` on the header, **before** any read | **Halts ingestion** — nothing written |
-| Source-to-target | `bronze == valid + rejected` in Silver, plus two dbt singular tests, plus a Redshift query | **Fails the run** |
+| Missing / invalid values | 16 rules declared in `config.RULES` | → `silver_rejected/` with reason; run continues |
+| Duplicates | Business-key dedupe, tiebreak on latest `_ingested_at` | → rejected as `duplicate_business_key` |
+| Invalid business values | `config.ACCEPTED_VALUES`, re-asserted as dbt tests | Rejected in Silver; dbt fails the build if one slips through |
+| Schema drift | Checked on the header, before any read | Halts ingestion — nothing written |
+| Source-to-target | `bronze == valid + rejected`, plus dbt tests | Fails the run |
 
-Two design choices worth naming: **reasons accumulate** (a row breaking three
-rules reports all three, so a data team is not fixing problems one rerun at a
-time), and **standardize runs before validate** (so `" economy "` is cleaned,
-not rejected).
+Two choices worth noting: rejection reasons **accumulate** (a row breaking
+three rules reports all three), and standardization runs **before**
+validation (so `" economy "` gets cleaned, not rejected).
 
-The supplied file is genuinely clean — 0 nulls, 0 exact duplicates, 0 rule
-violations. A reject path that never fires is untested, so
-`tests/make_dq_demo_file.py` injects one row per failure mode:
-
-```
-bronze 2,009 → valid 2,000 + rejected 9 → reconciled: true
-price_out_of_range 2 · duration_out_of_range 1 · days_left_out_of_range 1
-same_source_and_destination 1 · invalid_airline 1 · invalid_class 1
-invalid_stops 1 · implausible_nonstop_duration 1
-```
-
-Nothing is ever deleted: on a clean day Silver still writes an empty,
-correctly-typed rejected partition, because a missing file breaks every
-downstream contract that reads it.
+The supplied file is genuinely clean, so the reject path is proven separately
+with `tests/make_dq_demo_file.py`, which injects one bad row per failure
+mode. Nothing is ever silently dropped — a clean day still writes an empty,
+correctly-typed rejected partition.
 
 ---
 
 ## 5. Incremental strategy
 
-Detail in
-[`documentation/incremental_strategy.md`](documentation/incremental_strategy.md).
-Two decisions carry all five scenarios in the brief.
+Detail: [`documentation/incremental_strategy.md`](documentation/incremental_strategy.md).
 
-**`as_of_date` partitions every layer** — a day's work touches one partition.
-
-**`as_of_date` is inside the business key** — which makes a re-quote and a rerun
-different operations:
-same flight on a **new** date → new key → **appends** (giving price history);
-same flight on the **same** date → same key → **replaces itself**.
+`as_of_date` partitions every layer, and it's inside the business key — so a
+new date **appends** (price history), while a rerun on the same date
+**replaces itself**.
 
 | Scenario | Handling |
 |---|---|
-| New records | New `as_of_date` partition; dbt incremental filters `as_of_date >= max(as_of_date)` (`>=`, so a same-day rerun corrects itself) |
-| Changed records | New snapshot appends a row — that *is* the price history. Type-2 SCD named as the future option if the source ever sends corrections rather than snapshots |
-| Duplicate file | Bronze `md5(file)` checked against the manifest on `(file_hash, as_of_date)`; a renamed re-send is a no-op. Row-level dedupe as the second net |
-| Reruns | Dynamic partition overwrite (Bronze/Silver) + `delete+insert` on the key (dbt) + `MERGE` (Redshift). **Verified:** day-one partition stayed at exactly 300,153 rows after the day-two run |
-| Late data | `as_of_date` (logical) is kept separate from `_ingested_at` / `_batch_id` (physical), so a late file lands in its own partition and corrects only itself |
+| New records | New `as_of_date` partition; dbt filters `as_of_date >= max(as_of_date)` |
+| Changed records | New snapshot appends a row (that *is* the price history) |
+| Duplicate file | Bronze checks `md5(file)` against the manifest — a re-send is a no-op |
+| Reruns | Dynamic partition overwrite (Bronze/Silver) + `delete+insert` (dbt) + `MERGE` (Redshift). Verified: day-one stayed at exactly 300,153 rows after the day-two run |
+| Late data | Logical `as_of_date` is separate from physical `_ingested_at`, so a late file lands in and corrects only its own partition |
 
-One honest caveat: the incremental filter uses `max(as_of_date)`, so a *very*
-old late file needs `--full-refresh` or a targeted run. Production would use a
-`_batch_id` watermark table instead — a deliberate simplification for a 24-hour
-exercise, not an oversight.
+Caveat: the incremental filter uses `max(as_of_date)`, so a *very* old late
+file needs `--full-refresh`. Production would use a `_batch_id` watermark
+table instead — a deliberate simplification for a 24-hour exercise.
 
 ---
 
 ## 6. Data model
 
-Detail and ER diagram in
-[`documentation/data_model.md`](documentation/data_model.md).
+Detail and ER diagram: [`documentation/data_model.md`](documentation/data_model.md).
 
-### Grain — stated identically in the model, the dbt docs and the Redshift comment
+**Grain:** one row = one price quote, for one flight number, on one
+directional route, in one cabin class, at one booking lead time, captured in
+one price snapshot (`as_of_date`). `quote_count` counts quotes, not flights —
+one flight can have several fare variants.
 
-> **One row = one price quote for one flight number, on one directional route,
-> in one cabin class, at one booking lead time (`days_to_departure`), captured
-> in one price snapshot (`as_of_date`).**
+**Star schema:** `fct_flight_price_quote` (incremental) → `dim_route` (30,
+directional), `dim_airline` (6), `dim_lead_time_bucket` (5). No `dim_date`:
+with one snapshot date per file, it would just be a table of dates joined to
+itself.
 
-`quote_count` in the marts counts **quotes, not flights** — reading it as
-capacity would overstate the network, because one flight legitimately has
-several fare variants.
-
-### Star schema
-
-`fct_flight_price_quote` (incremental) → `dim_route` (30, directional),
-`dim_airline` (6), `dim_lead_time_bucket` (5). No `dim_date`: with one snapshot
-date per file and no departure date in the source, it would be a table of dates
-joined to itself.
-
-### The three business marts
+**The three business marts:**
 
 | Mart | Grain | Business value |
 |---|---|---|
-| **`mart_route_performance`** | route × cabin × snapshot | Where a carrier holds a price premium vs where competition has compressed fares. Spread and stddev matter more than the average — a wide spread on a busy route is where revenue management has room to move |
-| **`mart_booking_leadtime_pricing`** | route × cabin × lead-time band × snapshot | The fare curve as departure approaches, indexed against the cheapest band on the same route and cabin. Drives advance-purchase fencing and campaign timing |
-| **`mart_airline_cabin_mix`** | airline × route × snapshot | Competitive share **per route** (carrier volume is heavily skewed — Vistara 127,859 vs SpiceJet 9,011, so network-wide share would just re-report that skew) plus the Business-over-Economy premium for upsell decisions |
+| `mart_route_performance` | route × cabin × snapshot | Where a carrier holds a price premium vs. where competition has compressed fares |
+| `mart_booking_leadtime_pricing` | route × cabin × lead-time band × snapshot | The fare curve as departure approaches — drives advance-purchase fencing and campaign timing |
+| `mart_airline_cabin_mix` | airline × route × snapshot | Competitive share *per route* (carrier volume is heavily skewed) plus the Business-over-Economy premium |
 
-Plus `mart_data_quality_summary` (snapshot × rejection reason) — the table the
-monitoring dashboard points at.
-
-Derived logic — `lead_time_bucket`, `price_per_hour_inr`, `is_premium_cabin` —
-is defined **once** in `int_flight_pricing_enriched`, with thresholds in
-`dbt_project.yml` vars, so the three marts cannot disagree about what a "medium
-lead time" is.
+Plus `mart_data_quality_summary` for the monitoring dashboard. Shared logic
+(`lead_time_bucket`, `price_per_hour_inr`, `is_premium_cabin`) is defined once
+in `int_flight_pricing_enriched` so the marts can't disagree.
 
 ---
 
 ## 7. Redshift
 
-DDL in `redshift/ddl/`, rationale in
-[`documentation/redshift_design.md`](documentation/redshift_design.md).
+DDL: `redshift/ddl/`. Rationale: [`documentation/redshift_design.md`](documentation/redshift_design.md).
 
-- **Fact:** `DISTKEY(route_id)` — every mart aggregates by route; 30 values over
-  300k rows is near-even. `DISTKEY(as_of_date)` would be the worst choice: one
-  snapshot per day means every load lands on one slice.
+- **Fact:** `DISTKEY(route_id)` — every mart aggregates by route, and 30
+  values over 300k rows distributes evenly. `DISTKEY(as_of_date)` would be
+  the worst choice: one snapshot per day means every load lands on one slice.
 - **Sort:** `COMPOUND SORTKEY(as_of_date, route_id, cabin_class)` — date-led,
-  because zone maps skip whole blocks on a date filter, and daily appends arrive
-  in sort order so `VACUUM` stays cheap. `as_of_date` is `ENCODE RAW`;
-  compressing the leading sort key would undermine the zone maps.
-- **Dimensions:** `DISTSTYLE ALL` — 6 and 30 rows, so joins never redistribute.
-- **Keys:** declared for the planner, enforced by dbt tests. Deterministic md5
-  surrogates, not `IDENTITY`, so keys survive reruns and full refreshes.
-- **Scaling:** the constraint that bites first is not row count but that route
-  cardinality is fixed at 30 while the fact grows without limit — which is why
-  `skew_rows` from `SVV_TABLE_INFO` is on the monitoring list rather than
-  checked once and forgotten. Hot-table + Spectrum-for-cold-history is the path
-  past ~100 M rows.
+  for zone-map pruning on date filters and cheap `VACUUM`.
+- **Dimensions:** `DISTSTYLE ALL` — small enough that joins never redistribute.
+- **Keys:** deterministic md5 surrogates, not `IDENTITY`, so they survive
+  reruns and full refreshes.
+- **Scaling:** route cardinality is fixed at 30 while the fact grows without
+  limit, so `skew_rows` is on the monitoring list, not checked once and
+  forgotten. Hot-table + Spectrum-for-cold-history is the path past ~100M rows.
 
 ---
 
 ## 8. Monitoring
 
-Detail in [`documentation/monitoring.md`](documentation/monitoring.md).
-Everything reads from artefacts the pipeline already writes —
-`audit.dq_run_log`, `audit.ingestion_manifest`,
-`gold.mart_data_quality_summary` — so nothing depends on log scraping.
+Detail: [`documentation/monitoring.md`](documentation/monitoring.md). Reads
+from artefacts the pipeline already writes — no log scraping needed.
 
-**Paging:** reconciliation failure · schema drift · no file by SLA+2h · any dbt
-test failure on the fact or a mart.
-**Alerting:** `rejected_pct > 2%` · row count ±20% from the 7-day median · a
-rejection reason that has never fired before · avg fare per cabin moving >30%
-day over day.
-**Ticketing:** runtime >2× average · `skew_rows > 2` or `unsorted > 20%` ·
-duplicate file delivered · `multi_variant_quote_groups` moving >50%.
+- **Paging:** reconciliation failure · schema drift · no file by SLA+2h · any
+  dbt test failure on the fact or a mart.
+- **Alerting:** `rejected_pct > 2%` · row count ±20% from the 7-day median ·
+  a rejection reason never seen before · avg fare per cabin moving >30% day
+  over day.
+- **Ticketing:** runtime >2× average · `skew_rows > 2` or `unsorted > 20%` ·
+  duplicate file delivered.
 
-Includes business-plausibility checks, because a run can be perfectly reconciled
-and still be wrong — a truncated file reconciles perfectly against itself.
+Includes business-plausibility checks, because a run can reconcile perfectly
+and still be wrong — a truncated file reconciles against itself just fine.
 
 ---
 
@@ -325,78 +228,49 @@ and still be wrong — a truncated file reconciles perfectly against itself.
 
 ```
 ├── README.md
-├── architecture/
-│   └── pipeline_diagram.md          Mermaid: flowchart, sequence, contracts
+├── architecture/pipeline_diagram.md   Mermaid: flowchart, sequence, contracts
 ├── pyspark/
-│   ├── common/
-│   │   ├── config.py                paths, as_of_date, RULES, ACCEPTED_VALUES
-│   │   ├── schemas.py               explicit StructType + drift detection
-│   │   └── audit.py                 manifest + DQ run log
+│   ├── common/                        config, schemas + drift check, audit log
 │   ├── bronze/bronze_ingest.py
 │   ├── silver/silver_transform.py
 │   └── run_pipeline.py
 ├── dbt/kenya_airways/
-│   ├── dbt_project.yml, profiles.yml, packages.yml.example
-│   ├── models/staging/              stg_flights, stg_flights_rejected + sources
-│   ├── models/intermediate/         int_flight_routes, int_flight_pricing_enriched
-│   ├── models/marts/                fct, 2 dims, 4 marts + schema.yml
-│   ├── macros/                      lead_time_bucket, money, schema naming
-│   └── tests/                       5 singular tests + 2 generic tests
-├── redshift/ddl/                    01_schemas → 05_external_spectrum
-├── tests/
-│   ├── test_silver_rules.py         Silver rules, keys, dedupe (Spark)
-│   ├── test_schema_drift.py         schema contract (no Spark, fast)
-│   └── make_dq_demo_file.py         builds the injected-fault demo file
-├── documentation/
-│   ├── requirements.txt             pinned Python dependencies
-│   ├── assumptions.md
-│   ├── silver_dq_findings.md
-│   ├── data_quality.md
-│   ├── incremental_strategy.md
-│   ├── data_model.md
-│   ├── redshift_design.md
-│   └── monitoring.md
-└── documentation/  (continued above)
-
-data/ is not committed - place the supplied CSV at data/raw/ and the
-generated lake (data/lake/, data/warehouse/) is rebuilt by the run
-commands in section 2.
+│   ├── models/staging/                stg_flights, stg_flights_rejected
+│   ├── models/intermediate/           shared enrichment logic
+│   ├── models/marts/                  fct, 2 dims, 4 marts
+│   ├── macros/ + tests/
+├── redshift/ddl/                      01_schemas → 05_external_spectrum
+├── tests/                             pytest: Silver rules, schema drift, DQ demo file
+└── documentation/                     assumptions, DQ findings, data model,
+                                        incremental strategy, redshift design,
+                                        monitoring, requirements.txt
 ```
+
+`data/` is not committed — place the supplied CSV at `data/raw/`; the
+generated lake (`data/lake/`, `data/warehouse/`) is rebuilt by the commands
+in section 2.
 
 ---
 
 ## 10. Limitations
 
-Stated plainly, because knowing what a solution does *not* do is part of the
-solution.
-
-1. **`as_of_date` is invented.** It is the most consequential assumption in the
-   repo. If the real ingestion date differs from the file's mtime, every
-   partition label shifts. `--as-of-date` exists precisely so the value is
-   explicit and overridable rather than implicit.
-2. **No departure date, so no true time series.** Seasonality, day-of-week
-   effects and holiday pricing are unanswerable from this data. `days_left`
-   gives a *relative* curve only.
-3. **One snapshot in the supplied data.** The incremental path is demonstrated
-   with a second, synthetic snapshot. Behaviour over months of real files is
-   designed for and tested, but not observed.
-4. **DuckDB is not Redshift.** The SQL is close and the models genuinely run,
-   but `DISTKEY`/`SORTKEY` behaviour, Spectrum partition registration and
-   `MERGE` performance are unverified against a real cluster.
-5. **Marts rebuild fully.** Correct and cheap at this size; they need to become
-   incremental on `as_of_date` before the fact passes ~10 M rows.
-6. **No currency dimension.** Fares are INR, unconverted. FX belongs in a dated
-   rate table, not hard-coded in a transformation.
-7. **Fare outliers are surfaced, not rejected.** A ₹123,071 Business fare is
-   high but real. The marts expose spread and standard deviation so an analyst
-   judges, because a statistical outlier filter would delete genuine premium
-   fares.
-8. **No PII, so no masking layer.** If passenger or booking data were ever
-   joined in, column-level access control and a masking policy would be
-   required before Gold.
-9. **`multi_variant_quote_groups` is a canary, not an explanation.** The
-   pipeline detects that fare variants exist and preserves them; *why* a given
-   flight has nine fares is a question for the source system owner.
+1. **`as_of_date` is invented** — the most consequential assumption here. If
+   the real ingestion date differs from the file's mtime, partition labels
+   shift. `--as-of-date` exists so the value is explicit and overridable.
+2. **No departure date**, so no true time series — `days_left` gives only a
+   relative pricing curve.
+3. **One snapshot in the supplied data** — the incremental path is proven
+   with a synthetic second snapshot, not observed over real daily files.
+4. **DuckDB is not Redshift** — the SQL runs and passes, but `DISTKEY`/`SORTKEY`
+   behaviour and `MERGE` performance are unverified against a real cluster.
+5. **Marts rebuild fully** — fine at this size, but should go incremental
+   before the fact passes ~10M rows.
+6. **No currency dimension** — fares are INR, unconverted.
+7. **Fare outliers are surfaced, not rejected** — the marts expose spread and
+   stddev so an analyst judges, rather than a filter silently deleting real
+   premium fares.
+8. **No PII, so no masking layer** — would be required before Gold if
+   passenger data were ever joined in.
 
 ---
 

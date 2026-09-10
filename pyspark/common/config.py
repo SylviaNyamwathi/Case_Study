@@ -25,6 +25,51 @@ MANIFEST_PATH = LAKE_DIR / "_manifest" / "ingested_files"
 DQ_LOG_PATH = LAKE_DIR / "_dq" / "run_log"
 
 DEFAULT_SOURCE_FILE = RAW_DIR / "airlines_flights_data.csv"
+DOWNLOADS_SOURCE_FILE = Path.home() / "Downloads" / "airlines_flights_data.csv"
+
+
+def default_source_file() -> Path:
+    """Use the repository input, falling back to the user's Downloads copy."""
+    if DEFAULT_SOURCE_FILE.exists():
+        return DEFAULT_SOURCE_FILE
+    return DOWNLOADS_SOURCE_FILE
+
+
+def configure_windows_hadoop() -> None:
+    """Configure the standard local Hadoop helper required by Spark on Windows."""
+    if os.name != "nt":
+        return
+
+    def valid_winutils(path: Path) -> bool:
+        try:
+            return path.stat().st_size > 100_000 and path.read_bytes()[:2] == b"MZ"
+        except OSError:
+            return False
+
+    hadoop_home = os.environ.get("HADOOP_HOME")
+    if hadoop_home and valid_winutils(Path(hadoop_home) / "bin" / "winutils.exe"):
+        return
+
+    standard_home = Path("C:/hadoop")
+    if valid_winutils(standard_home / "bin" / "winutils.exe"):
+        os.environ["HADOOP_HOME"] = str(standard_home)
+        return
+
+    downloads_home = Path.home() / "Downloads" / "winutils" / "hadoop-3.3.6"
+    if valid_winutils(downloads_home / "bin" / "winutils.exe"):
+        os.environ["HADOOP_HOME"] = str(downloads_home)
+        return
+
+    if (standard_home / "bin" / "winutils.exe").exists():
+        raise RuntimeError(
+            "C:\\hadoop\\bin\\winutils.exe is not a valid Windows executable. "
+            "Replace the 464-byte download with the actual winutils.exe binary."
+        )
+
+    raise RuntimeError(
+        "Spark on Windows requires winutils.exe. Install it at "
+        "C:\\hadoop\\bin\\winutils.exe and rerun the command."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +167,7 @@ def get_spark(app_name: str):
     """
     from pyspark.sql import SparkSession
 
+    configure_windows_hadoop()
     return (
         SparkSession.builder.appName(app_name)
         .master(os.environ.get("SPARK_MASTER", "local[*]"))

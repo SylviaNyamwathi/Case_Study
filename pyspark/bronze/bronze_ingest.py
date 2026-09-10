@@ -34,7 +34,7 @@ from common import audit, config, schemas  # noqa: E402
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Bronze ingestion for airline flight pricing")
-    p.add_argument("--source-file", default=str(config.DEFAULT_SOURCE_FILE))
+    p.add_argument("--source-file", default=str(config.default_source_file()))
     p.add_argument(
         "--as-of-date",
         default=None,
@@ -52,7 +52,11 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     source_file = Path(args.source_file).resolve()
     if not source_file.exists():
-        raise FileNotFoundError(f"Source file not found: {source_file}")
+        raise FileNotFoundError(
+            f"Source file not found: {source_file}\n"
+            f"Place the supplied CSV at {config.DEFAULT_SOURCE_FILE} or run with "
+            "--source-file <path-to-airlines_flights_data.csv>."
+        )
 
     as_of = config.resolve_as_of_date(args.as_of_date, source_file)
     ctx = config.JobContext(
