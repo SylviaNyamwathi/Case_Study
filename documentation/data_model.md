@@ -77,7 +77,7 @@ erDiagram
 
 A conformed date dimension is deliberately absent. With one snapshot date per
 file and no departure date in the source, `as_of_date` on the fact is the whole
-of the time grain — a `dim_date` would be a table of dates joined to itself.
+of the time grain, a `dim_date` would be a table of dates joined to itself.
 The moment a departure date exists, it goes in.
 
 **Degenerate dimensions kept on the fact.** `flight_number`,
@@ -114,7 +114,7 @@ silver.flights_rejected (Parquet, external)
 | Layer | Materialization | Reason |
 |---|---|---|
 | staging | `view` | Thin renames; no storage cost, never stale |
-| intermediate | `ephemeral` | Inlined as CTEs — nothing persisted that nobody queries |
+| intermediate | `ephemeral` | Inlined as CTEs, nothing persisted that nobody queries |
 | dimensions | `table` | Tiny, read constantly, `DISTSTYLE ALL` in Redshift |
 | fact | `incremental` | Grows one snapshot per day; `delete+insert` on the key |
 | marts | `table` | Read many times by BI; full rebuild is cheap at this size |
@@ -194,7 +194,7 @@ Baseline for sanity checks: Business averages ~8× Economy across the dataset
 
 **Grain:** snapshot × rejection reason.
 
-Not a business mart — this is what the monitoring dashboard points at. It
+Not a business mart, this is what the monitoring dashboard points at. It
 carries `accepted_row_count`, `rejected_row_count_total`,
 `bronze_row_count_reconciled` and `rejected_pct`, so the >2% alert in
 `documentation/monitoring.md` reads from a table rather than from log scraping.
@@ -208,7 +208,7 @@ carries `accepted_row_count`, `rejected_row_count_total`,
 | `_source_*`, `_ingested_at`, `_batch_id`, `_file_hash` | Metadata we minted, never from the source (leading underscore) |
 | `*_sk` | Surrogate key (deterministic md5, not IDENTITY) |
 | `*_id` | Dimension key |
-| `*_inr` | Money, in Indian Rupees — unit in the name so it cannot be mistaken |
+| `*_inr` | Money, in Indian Rupees, unit in the name so it cannot be mistaken |
 | `is_*`, `has_*`, `sells_*` | Boolean |
 | `*_pct` | Percentage on a 0–100 scale, not a 0–1 fraction |
 | `*_count` | Integer count; `quote_count` counts quotes, not flights |
