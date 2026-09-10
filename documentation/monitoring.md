@@ -2,8 +2,8 @@
 
 The brief asks what would be monitored in production, what triggers an alert,
 and does not require the infrastructure. Everything below reads from artefacts
-the pipeline already writes — `audit.dq_run_log`, `audit.ingestion_manifest`,
-and `gold.mart_data_quality_summary` — so none of it depends on log scraping.
+the pipeline already writes, `audit.dq_run_log`, `audit.ingestion_manifest`,
+and `gold.mart_data_quality_summary`, so none of it depends on log scraping.
 
 ## What is instrumented today
 
@@ -25,7 +25,7 @@ and `gold.mart_data_quality_summary` — so none of it depends on log scraping.
 ### Freshness / arrival
 - Time of file arrival vs the 06:00 SLA
 - Age of the newest `as_of_date` in the fact
-- dbt source freshness on `_ingested_at` (warn 26 h, error 48 h — configured in
+- dbt source freshness on `_ingested_at` (warn 26 h, error 48 h, configured in
   `_staging__sources.yml`)
 
 ### Volume
@@ -66,7 +66,7 @@ reconciled and still be wrong.
 | Severity | Condition | Action |
 |---|---|---|
 | **P1 page** | Reconciliation failed (`valid + rejected != bronze`) | Halt; do not publish to Redshift |
-| **P1 page** | Schema drift — column added or removed | Halt; a human decides whether to widen the schema |
+| **P1 page** | Schema drift, column added or removed | Halt; a human decides whether to widen the schema |
 | **P1 page** | No file by 08:00 (SLA + 2 h) | Chase the source system |
 | **P1 page** | Any dbt test failure on the fact or a mart | Block publication; the marts serve dashboards |
 | **P2 alert** | `rejected_pct > 2%` | Investigate before the next run |
@@ -81,14 +81,14 @@ reconciled and still be wrong.
 Two thresholds deserve their reasoning stated, because the panel will ask.
 
 **Why 2% rejected.** Day one rejected 0%, and the injected-fault demo rejected
-0.45%. Anything above 2% on a file this clean means a systematic upstream change
-— a renamed category, a unit change — not a handful of bad rows. Tightening it
+0.45%. Anything above 2% on a file this clean means a systematic upstream change, 
+a renamed category, a unit change — not a handful of bad rows. Tightening it
 to 0% would page on a single legitimately odd row; loosening it to 10% would let
 a broken carrier feed through unnoticed.
 
 **Why 20% volume deviation.** With one file a day and a stable network, day-over-
 day row count should barely move. 20% is wide enough to survive a genuine
-schedule expansion and narrow enough to catch a truncated file — the most common
+schedule expansion and narrow enough to catch a truncated file, the most common
 real-world failure and the one that reconciliation alone cannot catch, because a
 half-file reconciles perfectly against itself.
 
@@ -111,12 +111,12 @@ investigation; "here are the 14 rows that failed test X" ends it.
 
 ---
 
-## Runbook — the four failures worth pre-writing
+## Runbook: the four failures worth pre-writing
 
 **Reconciliation failed.** The counts are in `dq_run_log`. Compare
 `bronze_row_count` against `valid + rejected` for the batch, then check whether
 Silver crashed mid-write, leaving a partial partition. Fix: rerun that
-`as_of_date`. Dynamic overwrite makes the rerun safe — it replaces the partition
+`as_of_date`. Dynamic overwrite makes the rerun safe, it replaces the partition
 rather than adding to it.
 
 **Schema drift.** Read the error; it names the missing or unexpected columns.
@@ -126,11 +126,11 @@ backfill. If no, quarantine the file. Never widen the schema to make an alert
 stop.
 
 **Rejected % spike.** Group `mart_data_quality_summary` by `rejection_reason`
-for the snapshot. One dominant reason means one upstream change — usually a new
+for the snapshot. One dominant reason means one upstream change, usually a new
 category value. Rejected rows are still on disk with their reasons, so nothing
 needs re-extracting from the source.
 
 **File never arrived.** Check `ingestion_manifest` for the last successful
 `as_of_date`. The marts continue serving the last good snapshot, so this is a
-staleness incident rather than an outage — the alert exists so nobody discovers
+staleness incident rather than an outage, the alert exists so nobody discovers
 it from a dashboard that quietly stopped moving.
