@@ -2,7 +2,6 @@
 -- Amazon Redshift - Gold layer DDL
 -- Kenya Airways / airline flight pricing pipeline
 --
--- Author: Sylvia Gitau
 -- Target: Redshift provisioned (ra3) or Serverless. No live cluster required -
 --         design decisions are documented inline and in
 --         documentation/redshift_design.md.
