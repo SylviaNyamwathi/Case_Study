@@ -179,7 +179,7 @@ itself.
 | Mart | Grain | Business value |
 |---|---|---|
 | `mart_route_performance` | route × cabin × snapshot | Where a carrier holds a price premium vs. where competition has compressed fares |
-| `mart_booking_leadtime_pricing` | route × cabin × lead-time band × snapshot | The fare curve as departure approaches — drives advance-purchase fencing and campaign timing |
+| `mart_booking_leadtime_pricing` | route × cabin × lead-time band × snapshot | The fare curve as departure approaches - drives advance-purchase fencing and campaign timing |
 | `mart_airline_cabin_mix` | airline × route × snapshot | Competitive share *per route* (carrier volume is heavily skewed) plus the Business-over-Economy premium |
 
 Plus `mart_data_quality_summary` for the monitoring dashboard. Shared logic
