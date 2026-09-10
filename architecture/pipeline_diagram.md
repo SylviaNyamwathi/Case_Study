@@ -6,7 +6,7 @@ like code instead of like a binary attachment. `pipeline_diagram.svg` and
 diagram is readable without a Mermaid renderer (in a plain editor, a Word
 document, or a printout).
 
-![Pipeline architecture](pipeline_diagram.png)
+<img width="1467" height="743" alt="image" src="https://github.com/user-attachments/assets/64fcfdf1-ca64-4d23-aae8-4e12a777180d" />
 
 ## End-to-end flow
 
@@ -80,7 +80,7 @@ flowchart LR
 
 ## Daily incremental run
 
-What actually happens when tomorrow's file lands — and why a rerun is safe.
+What actually happens when tomorrow's file lands and why a rerun is safe.
 
 ```mermaid
 sequenceDiagram
