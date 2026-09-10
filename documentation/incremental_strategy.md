@@ -149,26 +149,9 @@ That is a deliberate simplification for a 24-hour exercise, not an oversight.
 | Redshift | `COPY` + `MERGE` + `ANALYZE` |
 
 Nothing in that list scans the full history. The marts are the only full rebuild
-and they are aggregates — at the point where that stops being cheap, they become
+and they are aggregates, at the point where that stops being cheap, they become
 incremental on `as_of_date` with the same `delete+insert` pattern the fact
 already uses.
-
----
-
-## Orchestration
-
-`pyspark/run_pipeline.py` chains Bronze then Silver in one process for
-demonstration. In production each layer is its own task, because they fail
-differently and deserve their own retries and SLAs:
-
-```
-file_sensor (S3 arrival, SLA 06:00)
-    └─> bronze_ingest        (retry 2, alert on SchemaDriftError)
-        └─> silver_transform (retry 2, alert on reconciliation failure)
-            └─> dbt build    (retry 0 — a failing test must not be retried away)
-                └─> redshift_load (COPY + MERGE + ANALYZE)
-                    └─> dq_publish (refresh mart_data_quality_summary)
-```
 
 `dbt build` gets zero retries on purpose. Retrying a failed data-quality test
 just delays the alert and risks loading data a test already flagged.
