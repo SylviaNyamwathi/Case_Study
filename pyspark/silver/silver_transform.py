@@ -38,7 +38,7 @@ from pyspark.sql import functions as F  # noqa: E402
 from common import audit, config  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# BUSINESS KEY - and why it is not the obvious one
+# BUSINESS KEY
 # ---------------------------------------------------------------------------
 # The intuitive key is flight + route + time buckets + class + days_left +
 # as_of_date. Profiling killed that idea: it collapses 300,153 source rows to
