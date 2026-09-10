@@ -1,4 +1,4 @@
-# Silver Profiling & Data-Quality Findings
+# Silver Profiling & Data Quality Findings
 
 Profiled with a throwaway notebook and DuckDB over the Bronze partition
 (`as_of_date=2026-09-09`). Every number below is measured, not estimated.
@@ -21,7 +21,7 @@ Profiled with a throwaway notebook and DuckDB over the Bronze partition
 | Duration range | 0.83 h – 49.83 h |
 | `days_left` range | 1 – 49 |
 
-Volume by carrier is heavily skewed — Vistara 127,859 rows, SpiceJet 9,011 —
+Volume by carrier is heavily skewed, Vistara 127,859 rows, SpiceJet 9,011
 which matters for the cabin-mix mart: share must be computed per route, not
 network-wide, or Vistara dominates every chart by construction.
 
@@ -36,7 +36,7 @@ Business averages roughly **8×** Economy. That ratio is the sanity anchor for
 
 ---
 
-## Finding 1 — The intuitive business key would delete 21.5% of the data
+## Finding 1: The intuitive business key would delete 21.5% of the data
 
 This is the finding that changed the design.
 
@@ -76,7 +76,7 @@ fails if anyone narrows the key again.
 
 ---
 
-## Finding 2 — `duration` vs `stops` is coherent, so the rule is preventive
+## Finding 2: `duration` vs `stops` is coherent, so the rule is preventive
 
 The guide flagged a possible "49.83 h zero-stop flight". Checked directly:
 
@@ -86,7 +86,7 @@ The guide flagged a possible "49.83 h zero-stop flight". Checked directly:
 | one | 250,863 | 2.92 h | 49.83 h |
 | two_or_more | 13,286 | 3.92 h | 49.83 h |
 
-Nonstop flights top out at 3.58 h — entirely plausible for Indian domestic
+Nonstop flights top out at 3.58 h, entirely plausible for Indian domestic
 routes, and **zero** nonstop flights exceed 12 hours. The
 `implausible_nonstop_duration` rule (nonstop > 12 h) therefore fires on nothing
 today. It stays in as a guard rail for future files, and is proven to work
@@ -97,7 +97,7 @@ errors, so they pass. The absolute ceiling is set at 60 h.
 
 ---
 
-## Finding 3 — Zero rejections on the supplied file
+## Finding 3: Zero rejections on the supplied file
 
 Running all 16 rules over the real file:
 
@@ -134,12 +134,12 @@ invalid_stops                   1
 implausible_nonstop_duration    1
 ```
 
-Nine rows, eight distinct reasons — `price_out_of_range` catches both a zero
+Nine rows, eight distinct reasons, `price_out_of_range` catches both a zero
 and a negative fare. Full detail in `documentation/data_quality.md`.
 
 ---
 
-## Finding 4 — Accepted value sets, locked as a contract
+## Finding 4: Accepted value sets, locked as a contract
 
 Baseline captured from this file and enforced from now on
 (`pyspark/common/config.py::ACCEPTED_VALUES`):
@@ -154,11 +154,11 @@ Baseline captured from this file and enforced from now on
 
 A seventh airline or a new city is **rejected, not absorbed**. The same sets are
 re-asserted as `accepted_values` tests in the dbt staging layer, so drift is
-caught twice — once in PySpark on ingest, once in dbt before it reaches a mart.
+caught twice, once in PySpark on ingest, once in dbt before it reaches a mart.
 
 ---
 
-## Finding 5 — Standardization must run before validation
+## Finding 5: Standardization must run before validation
 
 `class` arriving as `" economy "` is a cosmetic problem, not a data-quality
 failure. Silver trims and normalizes casing first, then validates, so cosmetic
@@ -166,12 +166,9 @@ variation is cleaned while genuinely unknown values still fail. This ordering is
 asserted by
 `tests/test_silver_rules.py::test_whitespace_and_casing_are_standardized_not_rejected`.
 
-The source needs none of this today. It will matter the first time the export
-process changes.
-
 ---
 
-## Finding 6 — `index` is source lineage, not a key
+## Finding 6: `index` is source lineage, not a key
 
 The source `index` column (0–300,152) is a row number from the export, not a
 business identifier. It is renamed `_source_row` and kept in Bronze and Silver
