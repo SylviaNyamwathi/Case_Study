@@ -8,7 +8,7 @@ mechanism in the code, and each is demonstrated by a run below.
 | Missing or invalid values | 16 rules in `silver_transform.validation_rules()` | Row → `silver_rejected/` with reason; run continues |
 | Duplicate records | Business-key dedupe with documented tiebreak | Row → `silver_rejected/` as `duplicate_business_key` |
 | Invalid business values | `config.ACCEPTED_VALUES` + `RULES`, re-asserted as dbt `accepted_values` | Row rejected in Silver; dbt test fails the build if one slips through |
-| Unexpected schema changes | `schemas.assert_no_schema_drift()`, before any read | **Halts ingestion** — nothing is written |
+| Unexpected schema changes | `schemas.assert_no_schema_drift()`, before any read | **Halts ingestion**, nothing is written |
 | Source-to-target discrepancies | Reconciliation in Silver + two dbt singular tests + a Redshift query | **Fails the run** |
 
 ---
@@ -37,7 +37,7 @@ fail.
 | `implausible_nonstop_duration` | `stops = zero` and `duration > 12 h` |
 | `invalid_airline`, `invalid_source_city`, `invalid_destination_city`, `invalid_departure_time`, `invalid_arrival_time`, `invalid_stops`, `invalid_class` | Value outside the accepted set |
 
-Thresholds are guard rails for future files, not reactions to this one — the
+Thresholds are guard rails for future files, not reactions to this one, the
 supplied file breaks none of them. Rationale for each boundary is in
 `documentation/silver_dq_findings.md`.
 
@@ -45,7 +45,7 @@ supplied file breaks none of them. Rationale for each boundary is in
 
 ## 2. Duplicate handling
 
-Dedupe key (10 columns — see `assumptions.md` A2 for why `duration` and `price`
+Dedupe key (10 columns, see `assumptions.md` A2 for why `duration` and `price`
 are in it):
 
 ```
@@ -61,7 +61,7 @@ are reproducible. Losers are written to `silver_rejected/` as
 
 Duplicate *files* are caught earlier and more cheaply: Bronze hashes the file
 and checks `(file_hash, as_of_date)` against the ingestion manifest. A re-sent
-file — even renamed — is a no-op that writes zero rows. `--force` overrides it
+file, even renamed is a no-op that writes zero rows. `--force` overrides it
 deliberately.
 
 ---
@@ -103,7 +103,7 @@ in `redshift/ddl/05_external_spectrum.sql`.
 
 ---
 
-## 5. Proof — the two documented runs
+## 5. Proof: the two documented runs
 
 ### Run 1: the supplied file (clean)
 
@@ -152,7 +152,7 @@ rejection_reason_breakdown:
   implausible_nonstop_duration    1
 ```
 
-Day one's partition is untouched by run 2 — dynamic partition overwrite replaces
+Day one's partition is untouched by run 2, dynamic partition overwrite replaces
 only `as_of_date=2026-09-10`. Both snapshots are queryable side by side:
 
 ```
@@ -176,20 +176,20 @@ group by 1, 2 order by 1, 3 desc;
 
 | Suite | Count | Result |
 |---|---|---|
-| `pytest tests` — Silver rules, standardization, keys, dedupe, schema drift | 32 | **32 passed** |
-| `dbt build` — models + generic tests + singular tests | 72 | **PASS=72, ERROR=0** |
+| `pytest tests`: Silver rules, standardization, keys, dedupe, schema drift | 32 | **32 passed** |
+| `dbt build`: models + generic tests + singular tests | 72 | **PASS=72, ERROR=0** |
 
 dbt tests break down as: `not_null` and `unique` on every key, `accepted_values`
 on every categorical, `relationships` from fact to both dimensions,
 `unique_combination` on each mart's stated grain, `accepted_range` on
-`competing_airline_count`, plus five singular tests —
+`competing_airline_count`, plus five singular tests,
 `assert_price_is_positive`, `assert_fact_reconciles_to_staging`,
 `assert_route_performance_totals_match_fact`, `assert_no_self_routes`,
 `assert_business_premium_is_sane`.
 
 `accepted_range` and `unique_combination` are hand-written in
 `dbt/kenya_airways/tests/generic/generic_tests.sql` rather than pulled from
-`dbt_utils`, so the project builds with no package download —
+`dbt_utils`, so the project builds with no package download,
 `packages.yml.example` shows the package-based alternative.
 
 ---
